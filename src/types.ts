@@ -15,7 +15,8 @@ export type SeriesType =
   | "area"
   | "baseline"
   | "histogram"
-  | "candlestick";
+  | "candlestick"
+  | "binary";
 
 export type AxisSide = "left" | "right";
 
@@ -43,6 +44,11 @@ export interface SeriesConfig {
   factor?: number;
   /** Baseline reference value for the "baseline" type. */
   baseline_value?: number;
+  /**
+   * For `type: binary` — states counted as "on" (=1). Case-insensitive.
+   * Defaults to on/open/home/true/… Everything else (incl. off/closed) is 0.
+   */
+  on_states?: string[];
   /**
    * For candlestick series where a single entity exposes OHLC via attributes,
    * map attribute names here, e.g. { open: "open", high: "high", ... }.

@@ -1,6 +1,6 @@
 {
   "name": "lightweight-charts-card",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A slick, high-performance chart card for Home Assistant built on TradingView Lightweight Charts.",
   "type": "module",
   "license": "MIT",

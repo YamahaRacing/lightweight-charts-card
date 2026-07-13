@@ -33,6 +33,8 @@ live-streaming sensors.
 - 🕘 **Quick range buttons** (1h / 24h / 7d, fully configurable)
 - 💬 **Rich crosshair tooltip** — time + per-series value & unit
 - 🧱 **Multi-pane** — stack series in separate panes (e.g. kW vs °C), manual or auto-by-unit
+- 🔲 **Boolean states** — render on/off entities as a stepped signal in a slim pane to see how a value reacts after a switch
+- ⏳ **Loading spinner** while history is fetched
 - 🪟 **Multiple series & dual axes** (left/right price scales)
 - 🕯️ **Line, area, baseline, histogram & candlestick** series
 - 🌗 Follows the Home Assistant light/dark theme automatically
@@ -118,6 +120,32 @@ series:
     pane: 1                       # its own stacked pane
 ```
 
+### Boolean states (see how a value reacts to a switch)
+
+Use `type: binary` for on/off entities (valves, pumps, switches, binary
+sensors). They render as a stepped 0/1 signal in their own slim pane directly
+below the graphs, time-aligned — so you can read "valve opened here → temperature
+started rising":
+
+```yaml
+type: custom:lightweight-charts-card
+title: Heating
+height: 320
+series:
+  - entity: sensor.living_room_temperature
+    name: Temperature
+    type: line
+    color: "#ff6d00"
+  - entity: binary_sensor.heating_valve   # or switch.*, input_boolean.*
+    name: Valve
+    type: binary
+    color: "#41bdf5"
+```
+
+States counted as "on" default to `on/open/home/true/…`; override per series
+with `on_states: [heat, cool]`. Anything else is "off"; `unavailable`/`unknown`
+are skipped.
+
 ### Candlestick from OHLC attributes
 
 Candlesticks need Open/High/Low/Close. Point the series at an entity whose
@@ -150,7 +178,7 @@ series:
 | `auto_pane_by_unit` | card | `false` | Put each distinct unit on its own pane |
 | `entity` | series | – | **Required.** Entity id |
 | `name` | series | friendly_name | Legend label |
-| `type` | series | `line` | line / area / baseline / histogram / candlestick |
+| `type` | series | `line` | line / area / baseline / histogram / candlestick / binary |
 | `color` | series | palette | Series color (`#RRGGBB`) |
 | `axis` | series | `right` | `left` or `right` price scale |
 | `pane` | series | `0` | Pane index (stacked sub-charts) |
@@ -161,6 +189,7 @@ series:
 | `precision` | series | – | Decimal places |
 | `baseline_value` | series | `0` | Reference for `baseline` |
 | `ohlc_attributes` | series | – | Attribute map for candlesticks |
+| `on_states` | series | on/open/… | States counted as "on" for `binary` |
 
 ## Architecture
 

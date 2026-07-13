@@ -12,6 +12,7 @@ import {
   type LineWidth,
   type LineData,
   type CandlestickData,
+  LineType,
 } from "lightweight-charts";
 
 import type { SeriesConfig, LinePoint, OhlcPoint } from "./types";
@@ -74,6 +75,20 @@ export class ChartController {
     this.chart.priceScale("left").applyOptions({ visible: usesLeft });
 
     this.prunePanes();
+    this.applyPaneStretch();
+  }
+
+  /** Give panes that only hold binary series a slim height. */
+  private applyPaneStretch(): void {
+    for (const pane of this.chart.panes()) {
+      const cfgs = pane
+        .getSeries()
+        .map((api) => this.series.find((s) => s.api === api)?.cfg)
+        .filter((c): c is SeriesConfig => !!c);
+      if (!cfgs.length) continue;
+      const allBinary = cfgs.every((c) => c.type === "binary");
+      pane.setStretchFactor(allBinary ? 1 : 4);
+    }
   }
 
   private createSeries(
@@ -117,6 +132,32 @@ export class ChartController {
           paneIndex,
         );
       }
+      case "binary":
+        // Stepped, filled 0/1 signal locked to a [0,1] scale — a clean square
+        // wave for on/off states (valve open, pump running, …).
+        return this.chart.addSeries(
+          AreaSeries,
+          {
+            lineColor: color,
+            topColor: withAlpha(color, cfg.fill_opacity ?? 0.45),
+            bottomColor: withAlpha(color, 0.04),
+            lineWidth: (cfg.line_width ?? 2) as LineWidth,
+            lineType: LineType.WithSteps,
+            priceScaleId,
+            lastValueVisible: false,
+            priceLineVisible: false,
+            crosshairMarkerVisible: false,
+            priceFormat: {
+              type: "custom",
+              minMove: 1,
+              formatter: (v: number) => (v >= 0.5 ? "On" : "Off"),
+            },
+            autoscaleInfoProvider: () => ({
+              priceRange: { minValue: -0.08, maxValue: 1.08 },
+            }),
+          },
+          paneIndex,
+        );
       case "histogram":
         return this.chart.addSeries(
           HistogramSeries,

@@ -132,7 +132,7 @@ export class LightweightChartsCardEditor extends LitElement {
           this.updateSeries(i, {
             type: (e.target as HTMLSelectElement).value as SeriesConfig["type"],
           })}>
-          ${["line", "area", "baseline", "histogram", "candlestick"].map(
+          ${["line", "area", "baseline", "histogram", "candlestick", "binary"].map(
             (t) => html`<option value=${t}
               ?selected=${(s.type ?? "line") === t}>${t}</option>`,
           )}

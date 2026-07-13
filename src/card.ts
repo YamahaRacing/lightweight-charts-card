@@ -9,13 +9,20 @@ import type {
   OhlcPoint,
 } from "./types";
 import { ChartController, type CrosshairEvent } from "./chart";
-import { fetchHistory, toLinePoints, toOhlcPoints } from "./history";
+import {
+  fetchHistory,
+  toLinePoints,
+  toOhlcPoints,
+  toBinaryPoints,
+  onStateSet,
+} from "./history";
 import {
   CARD_TAG,
   EDITOR_TAG,
   CARD_VERSION,
   DEFAULT_RANGES,
   paletteColor,
+  stateToBinary,
 } from "./const";
 import type { RangePreset } from "./types";
 
@@ -35,6 +42,7 @@ export class LightweightChartsCard extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
   @state() private config?: ChartCardConfig;
   @state() private error?: string;
+  @state() private loading = false;
   @state() private activeHours = 24;
   @query(".chart") private chartEl!: HTMLDivElement;
   @query(".tooltip") private tooltipEl?: HTMLDivElement;
@@ -134,6 +142,9 @@ export class LightweightChartsCard extends LitElement {
           style=${`height:${this.config?.height ?? 300}px`}
         ></div>
         <div class="tooltip" hidden></div>
+        ${this.loading && !this.error
+          ? html`<div class="loading"><span class="spinner"></span></div>`
+          : nothing}
       </div>
       ${this.renderLegend()}
     </ha-card>`;
@@ -188,6 +199,7 @@ export class LightweightChartsCard extends LitElement {
     const controller = this.controller;
     if (!this.hass || !this.config || !controller) return;
     const cfg = this.config;
+    this.loading = true;
     try {
       const entityIds = cfg.series.map((s) => s.entity);
       const needAttributes = cfg.series.some((s) => !!s.ohlc_attributes);
@@ -207,17 +219,13 @@ export class LightweightChartsCard extends LitElement {
 
       cfg.series.forEach((s, i) => {
         const rows = raw[s.entity];
-        if (s.type === "candlestick") {
-          const pts = toOhlcPoints(rows, s);
-          controller.setData(i, pts);
-          const last = pts[pts.length - 1];
-          if (last) this.liveCursor[i] = last.time;
-        } else {
-          const pts = toLinePoints(rows, s);
-          controller.setData(i, pts);
-          const last = pts[pts.length - 1];
-          if (last) this.liveCursor[i] = last.time;
-        }
+        let pts: LinePoint[] | OhlcPoint[];
+        if (s.type === "candlestick") pts = toOhlcPoints(rows, s);
+        else if (s.type === "binary") pts = toBinaryPoints(rows, s);
+        else pts = toLinePoints(rows, s);
+        controller.setData(i, pts);
+        const last = pts[pts.length - 1];
+        if (last) this.liveCursor[i] = last.time;
       });
 
       controller.fitContent();
@@ -227,6 +235,8 @@ export class LightweightChartsCard extends LitElement {
       if (this.controller === controller) {
         this.error = `History load failed: ${(e as Error).message}`;
       }
+    } finally {
+      if (this.controller === controller) this.loading = false;
     }
   }
 
@@ -254,6 +264,10 @@ export class LightweightChartsCard extends LitElement {
         };
         if (![pt.open, pt.high, pt.low, pt.close].every(Number.isFinite)) return;
         this.controller!.updatePoint(i, pt);
+      } else if (s.type === "binary") {
+        const v = stateToBinary(stateObj.state, onStateSet(s));
+        if (v === null) return;
+        this.controller!.updatePoint(i, { time, value: v });
       } else {
         const value = Number(stateObj.state) * (s.factor ?? 1);
         if (!Number.isFinite(value)) return;
@@ -266,20 +280,41 @@ export class LightweightChartsCard extends LitElement {
 
   // ---- Panes --------------------------------------------------------------
 
-  /** Resolve a pane index per series (explicit `pane` > auto-by-unit > 0). */
+  /**
+   * Resolve a pane index per series. Precedence: explicit `pane` > binary
+   * signals (grouped into their own slim pane below the graphs) >
+   * auto-by-unit > main pane 0.
+   */
   private resolvePanes(): number[] {
     const cfg = this.config!;
-    if (!cfg.auto_pane_by_unit) {
-      return cfg.series.map((s) => s.pane ?? 0);
-    }
+    const panes: number[] = new Array(cfg.series.length);
     const unitToPane = new Map<string, number>();
-    let next = 0;
-    return cfg.series.map((s) => {
-      if (s.pane != null) return s.pane;
-      const unit = this.unitOf(s) ?? "";
-      if (!unitToPane.has(unit)) unitToPane.set(unit, next++);
-      return unitToPane.get(unit)!;
+    let nextAnalog = 0;
+
+    // Pass 1: analog series → main pane / unit panes / explicit panes.
+    cfg.series.forEach((s, i) => {
+      if (s.type === "binary") return;
+      if (s.pane != null) {
+        panes[i] = s.pane;
+        nextAnalog = Math.max(nextAnalog, s.pane + 1);
+      } else if (cfg.auto_pane_by_unit) {
+        const unit = this.unitOf(s) ?? "";
+        if (!unitToPane.has(unit)) unitToPane.set(unit, nextAnalog++);
+        panes[i] = unitToPane.get(unit)!;
+      } else {
+        panes[i] = 0;
+        nextAnalog = Math.max(nextAnalog, 1);
+      }
     });
+
+    // Pass 2: binary series share one pane placed under the graphs.
+    const binaryPane = nextAnalog;
+    cfg.series.forEach((s, i) => {
+      if (s.type !== "binary") return;
+      panes[i] = s.pane ?? binaryPane;
+    });
+
+    return panes;
   }
 
   // ---- Tooltip ------------------------------------------------------------
@@ -311,7 +346,12 @@ export class LightweightChartsCard extends LitElement {
         const f = (n: number) => this.fmt(n, s);
         valStr = `O ${f(d.open)} · H ${f(d.high)} · L ${f(d.low)} · C ${f(d.close)}`;
       } else if (d && "value" in d && typeof d.value === "number") {
-        valStr = `${this.fmt(d.value, s)}${unit ? " " + esc(unit) : ""}`;
+        valStr =
+          s.type === "binary"
+            ? d.value >= 0.5
+              ? "On"
+              : "Off"
+            : `${this.fmt(d.value, s)}${unit ? " " + esc(unit) : ""}`;
       } else {
         return;
       }
@@ -362,6 +402,11 @@ export class LightweightChartsCard extends LitElement {
   private currentValue(s: SeriesConfig): string | null {
     const stateObj = this.hass?.states[s.entity];
     if (!stateObj) return null;
+    // For booleans show the actual state text (on/open/closed/…).
+    if (s.type === "binary") {
+      const v = stateToBinary(stateObj.state, onStateSet(s));
+      return v === null ? null : stateObj.state;
+    }
     const raw = Number(stateObj.state) * (s.factor ?? 1);
     if (!Number.isFinite(raw)) return null;
     const num =
@@ -411,6 +456,27 @@ export class LightweightChartsCard extends LitElement {
     }
     .chart {
       width: 100%;
+    }
+    .loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .loading .spinner {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 3px solid var(--divider-color, rgba(127, 127, 127, 0.3));
+      border-top-color: var(--primary-color, #2962ff);
+      animation: lwc-spin 0.7s linear infinite;
+    }
+    @keyframes lwc-spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
     .tooltip {
       position: absolute;

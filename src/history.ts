@@ -5,6 +5,7 @@ import type {
   OhlcPoint,
   HistoryRow,
 } from "./types";
+import { DEFAULT_ON_STATES, stateToBinary } from "./const";
 
 /**
  * Fetch recorder history for a set of entities over the last `hours` hours.
@@ -53,6 +54,38 @@ export function toLinePoints(
     const time = Math.floor(row.lu);
     if (time <= lastTime) continue;
     lastTime = time;
+    out.push({ time, value });
+  }
+  return out;
+}
+
+/** Build the "on" state set for a binary series (lower-cased). */
+export function onStateSet(cfg: SeriesConfig): Set<string> {
+  return new Set(
+    (cfg.on_states ?? DEFAULT_ON_STATES).map((s) => s.toLowerCase()),
+  );
+}
+
+/** Convert HA history rows into a 0/1 step signal for a binary series. */
+export function toBinaryPoints(
+  rows: HistoryRow[] | undefined,
+  cfg: SeriesConfig,
+): LinePoint[] {
+  if (!rows?.length) return [];
+  const onStates = onStateSet(cfg);
+  const out: LinePoint[] = [];
+  let lastTime = -Infinity;
+  let lastValue: number | null = null;
+
+  for (const row of rows) {
+    const value = stateToBinary(row.s, onStates);
+    if (value === null) continue; // skip unavailable/unknown
+    const time = Math.floor(row.lu);
+    if (time <= lastTime) continue;
+    // Collapse consecutive identical states — a step line only needs edges.
+    if (value === lastValue) continue;
+    lastTime = time;
+    lastValue = value;
     out.push({ time, value });
   }
   return out;
