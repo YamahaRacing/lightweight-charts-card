@@ -1,0 +1,30 @@
+name: Release
+
+# On every published GitHub Release, build the card and attach the compiled
+# JS as a release asset. HACS downloads this asset for the "dashboard" category,
+# so contributors never have to commit or upload the built file by hand.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-attach:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Attach built card to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/lightweight-charts-card.js
