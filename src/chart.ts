@@ -96,16 +96,27 @@ export class ChartController {
           },
           paneIndex,
         );
-      case "baseline":
+      case "baseline": {
+        // Apply the configured color to both sides so `color` is honoured
+        // (the library otherwise falls back to its teal/red defaults, which
+        // reads as "wrong color / invisible" against an autoscaled chart).
+        const fill = cfg.fill_opacity ?? 0.28;
         return this.chart.addSeries(
           BaselineSeries,
           {
             baseValue: { type: "price", price: cfg.baseline_value ?? 0 },
+            topLineColor: color,
+            topFillColor1: withAlpha(color, fill),
+            topFillColor2: withAlpha(color, 0.02),
+            bottomLineColor: color,
+            bottomFillColor1: withAlpha(color, 0.02),
+            bottomFillColor2: withAlpha(color, fill),
             lineWidth: (cfg.line_width ?? 2) as LineWidth,
             priceScaleId,
           },
           paneIndex,
         );
+      }
       case "histogram":
         return this.chart.addSeries(
           HistogramSeries,
