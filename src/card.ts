@@ -15,6 +15,7 @@ import {
   toOhlcPoints,
   toBinaryPoints,
   onStateSet,
+  splitGaps,
 } from "./history";
 import {
   CARD_TAG,
@@ -50,7 +51,10 @@ export class LightweightChartsCard extends LitElement {
   @state() private config?: ChartCardConfig;
   @state() private error?: string;
   @state() private loading = false;
+  /** Visible window (button selection), in hours. */
   @state() private activeHours = 24;
+  /** How many hours of data are currently loaded (>= activeHours). */
+  private loadedHours = 24;
   @query(".chart") private chartEl!: HTMLDivElement;
   @query(".tooltip") private tooltipEl?: HTMLDivElement;
 
@@ -74,7 +78,10 @@ export class LightweightChartsCard extends LitElement {
     }
     this.config = config;
     this.historyLoaded = false;
-    this.activeHours = config.hours_to_show ?? this.activeHours ?? 24;
+    // `hours_to_show` sets how much data to LOAD; the range buttons only change
+    // the visible window. Start with the visible window matching the load.
+    this.loadedHours = config.hours_to_show ?? 24;
+    this.activeHours = config.hours_to_show ?? 24;
     // Rebuild series on next render if the chart already exists.
     if (this.controller) {
       this.controller.setSeries(config.series, this.resolvePanes());
@@ -128,7 +135,7 @@ export class LightweightChartsCard extends LitElement {
     this.resizeObserver = new ResizeObserver(() => {
       if (this.needsFit && this.controller && this.chartEl.clientWidth > 0) {
         this.needsFit = false;
-        this.controller.fitContent();
+        this.applyVisibleRange();
       }
     });
     this.resizeObserver.observe(this.chartEl);
@@ -196,8 +203,24 @@ export class LightweightChartsCard extends LitElement {
   private selectRange(hours: number): void {
     if (this.activeHours === hours) return;
     this.activeHours = hours;
-    this.historyLoaded = false;
-    void this.loadHistory();
+    if (hours > this.loadedHours) {
+      // Need more data than is loaded — fetch it, then the range is applied.
+      this.loadedHours = hours;
+      this.historyLoaded = false;
+      void this.loadHistory();
+    } else {
+      // Data already loaded — just change the visible window (instant).
+      this.applyVisibleRange();
+    }
+  }
+
+  /** Set the visible window to the last `activeHours` (shifted to local time). */
+  private applyVisibleRange(): void {
+    if (!this.controller) return;
+    const off = tzOffsetSeconds();
+    const to = Math.floor(Date.now() / 1000) + off;
+    const from = to - this.activeHours * 3600;
+    this.controller.setVisibleRange(from, to);
   }
 
   private renderLegend() {
@@ -230,7 +253,7 @@ export class LightweightChartsCard extends LitElement {
       const raw = await fetchHistory(
         this.hass,
         entityIds,
-        this.activeHours,
+        this.loadedHours,
         cfg.significant_changes_only ?? true,
         needAttributes,
       );
@@ -241,33 +264,46 @@ export class LightweightChartsCard extends LitElement {
       if (this.controller !== controller || !this.isConnected) return;
 
       const off = tzOffsetSeconds();
+      const showGaps = cfg.show_gaps !== false;
+      const gapSec = cfg.gap_threshold ?? 0; // 0 = auto (per series)
       cfg.series.forEach((s, i) => {
         const rows = raw[s.entity];
-        let pts: LinePoint[] | OhlcPoint[];
-        if (s.type === "candlestick") pts = toOhlcPoints(rows, s);
-        else if (s.type === "binary") pts = toBinaryPoints(rows, s);
-        else pts = toLinePoints(rows, s);
+        if (s.type === "candlestick") {
+          const pts = toOhlcPoints(rows, s);
+          for (const p of pts) p.time += off;
+          controller.setData(i, pts);
+          if (pts.length) this.liveCursor[i] = pts[pts.length - 1].time;
+          return;
+        }
+        const pts =
+          s.type === "binary" ? toBinaryPoints(rows, s) : toLinePoints(rows, s);
         // Bake local time into the timestamps so the (UTC-rendering) axis shows
         // local wall-clock. The tooltip formats these back as UTC.
         for (const p of pts) p.time += off;
-        controller.setData(i, pts);
-        const last = pts[pts.length - 1];
-        if (last) this.liveCursor[i] = last.time;
+        if (pts.length) this.liveCursor[i] = pts[pts.length - 1].time;
+
+        if (showGaps && s.type !== "binary") {
+          const { main, gap } = splitGaps(pts, gapSec);
+          controller.setData(i, main);
+          controller.setGapData(i, gap);
+        } else {
+          controller.setData(i, pts);
+          controller.setGapData(i, []);
+        }
       });
 
-      // fitContent must run after the chart actually has a width (autoSize lays
-      // out asynchronously); a too-early call is a no-op and leaves the view
-      // zoomed to the right edge. Fit now, after the next frames, and (via the
-      // ResizeObserver) as soon as the chart first gains a real width.
+      // The visible window must be applied after the chart has a real width
+      // (autoSize lays out asynchronously). Apply now, after the next frames,
+      // and (via the ResizeObserver) as soon as the chart first gains width.
       this.needsFit = true;
-      const refit = () => {
+      const applyRange = () => {
         if (this.controller === controller && this.isConnected) {
-          controller.fitContent();
+          this.applyVisibleRange();
           if (this.chartEl.clientWidth > 0) this.needsFit = false;
         }
       };
-      refit();
-      requestAnimationFrame(() => requestAnimationFrame(refit));
+      applyRange();
+      requestAnimationFrame(() => requestAnimationFrame(applyRange));
       this.historyLoaded = true;
       this.error = undefined;
     } catch (e) {

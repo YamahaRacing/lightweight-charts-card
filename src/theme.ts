@@ -57,6 +57,9 @@ export function chartOptions(t: ResolvedTheme): DeepPartial<ChartOptions> {
       timeVisible: true,
       secondsVisible: false,
       uniformDistribution: true,
+      // Allow zooming far enough out to show a whole range of dense recorder
+      // data (default 0.5 px/point can't fit ~24h of a chatty power sensor).
+      minBarSpacing: 0.005,
     },
     crosshair: {
       mode: CrosshairMode.Magnet,

@@ -13,16 +13,24 @@ import {
   type LineData,
   type CandlestickData,
   LineType,
+  LineStyle,
 } from "lightweight-charts";
 
 import type { SeriesConfig, LinePoint, OhlcPoint } from "./types";
+import type { Whitespace } from "./history";
 import { chartOptions, resolveTheme, type ResolvedTheme } from "./theme";
 import { paletteColor } from "./const";
 
 interface ManagedSeries {
   api: ISeriesApi<LwSeriesType>;
   cfg: SeriesConfig;
+  paneIndex: number;
+  /** Lazily created faint dashed overlay that bridges data gaps. */
+  gapApi?: ISeriesApi<"Line">;
 }
+
+/** Any point we may feed to a series: value point, OHLC, or whitespace. */
+type AnyPoint = LinePoint | OhlcPoint | Whitespace;
 
 const asTime = (t: number): UTCTimestamp => t as UTCTimestamp;
 
@@ -54,7 +62,10 @@ export class ChartController {
    * `panes[i]` is the target pane index for series i (0 = main).
    */
   setSeries(configs: SeriesConfig[], panes?: number[]): void {
-    for (const s of this.series) this.chart.removeSeries(s.api);
+    for (const s of this.series) {
+      if (s.gapApi) this.chart.removeSeries(s.gapApi);
+      this.chart.removeSeries(s.api);
+    }
     this.series = [];
 
     configs.forEach((cfg, i) => {
@@ -67,7 +78,7 @@ export class ChartController {
           priceFormat: { type: "price", precision: cfg.precision, minMove: Math.pow(10, -cfg.precision) },
         });
       }
-      this.series.push({ api, cfg });
+      this.series.push({ api, cfg, paneIndex });
     });
 
     // Only show the left scale if something actually uses it.
@@ -209,15 +220,43 @@ export class ChartController {
   }
 
   /** Bulk-load historical data for series index i. */
-  setData(i: number, data: LinePoint[] | OhlcPoint[]): void {
+  setData(i: number, data: AnyPoint[]): void {
     const s = this.series[i];
     if (!s) return;
-    const shaped = (data as Array<LinePoint | OhlcPoint>).map((p) => ({
-      ...p,
-      time: asTime(p.time),
-    }));
+    const shaped = data.map((p) => ({ ...p, time: asTime(p.time) }));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     s.api.setData(shaped as any);
+  }
+
+  /**
+   * Set the faint dashed "gap bridge" overlay for series i. Creates the overlay
+   * lazily (same pane & price scale). Pass an empty array to clear it.
+   */
+  setGapData(i: number, data: Array<LinePoint | Whitespace>): void {
+    const s = this.series[i];
+    if (!s) return;
+    if (!s.gapApi) {
+      if (data.length === 0) return;
+      s.gapApi = this.chart.addSeries(
+        LineSeries,
+        {
+          color: this.theme.dark
+            ? "rgba(170,178,189,0.7)"
+            : "rgba(90,98,110,0.6)",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          priceScaleId: s.cfg.axis === "left" ? "left" : "right",
+          lastValueVisible: false,
+          priceLineVisible: false,
+          crosshairMarkerVisible: false,
+          pointMarkersVisible: false,
+        },
+        s.paneIndex,
+      );
+    }
+    const shaped = data.map((p) => ({ ...p, time: asTime(p.time) }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    s.gapApi.setData(shaped as any);
   }
 
   /** Append/replace the latest live point for series index i. */
@@ -246,6 +285,18 @@ export class ChartController {
   /** Locale used for axis date/number formatting (e.g. "de-DE"). */
   setLocale(locale: string): void {
     this.chart.applyOptions({ localization: { locale } });
+  }
+
+  /** Set the visible time window (seconds). Safe no-op if it can't be applied. */
+  setVisibleRange(fromSec: number, toSec: number): void {
+    try {
+      this.chart.timeScale().setVisibleRange({
+        from: fromSec as UTCTimestamp,
+        to: toSec as UTCTimestamp,
+      });
+    } catch {
+      // Range outside the data or chart not laid out yet — ignore.
+    }
   }
 
   fitContent(): void {

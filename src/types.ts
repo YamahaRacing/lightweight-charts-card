@@ -93,6 +93,13 @@ export interface ChartCardConfig {
    * Default true.
    */
   uniform_distribution?: boolean;
+  /** Bridge missing-data ranges with a faint dashed line. Default true. */
+  show_gaps?: boolean;
+  /**
+   * Gap threshold in seconds — a bigger time jump between two samples counts as
+   * "no data". Defaults to an automatic value (≈8× the median sampling gap).
+   */
+  gap_threshold?: number;
   series: SeriesConfig[];
 }
 
