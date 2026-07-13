@@ -28,6 +28,13 @@ import type { RangePreset } from "./types";
 
 const isDark = (hass?: HomeAssistant): boolean => !!hass?.themes?.darkMode;
 
+/**
+ * Seconds to add to a UTC timestamp so Lightweight Charts (which renders the
+ * time axis in UTC) displays local wall-clock time. `getTimezoneOffset` returns
+ * minutes *behind* UTC, so we negate it.
+ */
+const tzOffsetSeconds = (): number => -new Date().getTimezoneOffset() * 60;
+
 /** Escape untrusted text before injecting into the tooltip innerHTML. */
 function esc(s: string): string {
   return s
@@ -52,6 +59,9 @@ export class LightweightChartsCard extends LitElement {
   /** last_updated (epoch s) already pushed live, per series index. */
   private liveCursor: number[] = [];
   private historyLoaded = false;
+  /** True until fitContent has run against a real (non-zero) width. */
+  private needsFit = false;
+  private resizeObserver?: ResizeObserver;
 
   // ---- Home Assistant card lifecycle -------------------------------------
 
@@ -108,10 +118,20 @@ export class LightweightChartsCard extends LitElement {
     this.controller.setUniformDistribution(
       this.config.uniform_distribution ?? true,
     );
+    this.controller.setLocale(this.localeString());
     this.liveCursor = this.config.series.map(() => -Infinity);
     if (this.config.tooltip !== false) {
       this.controller.subscribeCrosshair((e) => this.updateTooltip(e));
     }
+    // fitContent needs a real width; when the chart first gains one (autoSize
+    // lays out asynchronously), fit the pending range once.
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.needsFit && this.controller && this.chartEl.clientWidth > 0) {
+        this.needsFit = false;
+        this.controller.fitContent();
+      }
+    });
+    this.resizeObserver.observe(this.chartEl);
     void this.loadHistory();
   }
 
@@ -220,18 +240,34 @@ export class LightweightChartsCard extends LitElement {
       // instead of writing into a destroyed chart.
       if (this.controller !== controller || !this.isConnected) return;
 
+      const off = tzOffsetSeconds();
       cfg.series.forEach((s, i) => {
         const rows = raw[s.entity];
         let pts: LinePoint[] | OhlcPoint[];
         if (s.type === "candlestick") pts = toOhlcPoints(rows, s);
         else if (s.type === "binary") pts = toBinaryPoints(rows, s);
         else pts = toLinePoints(rows, s);
+        // Bake local time into the timestamps so the (UTC-rendering) axis shows
+        // local wall-clock. The tooltip formats these back as UTC.
+        for (const p of pts) p.time += off;
         controller.setData(i, pts);
         const last = pts[pts.length - 1];
         if (last) this.liveCursor[i] = last.time;
       });
 
-      controller.fitContent();
+      // fitContent must run after the chart actually has a width (autoSize lays
+      // out asynchronously); a too-early call is a no-op and leaves the view
+      // zoomed to the right edge. Fit now, after the next frames, and (via the
+      // ResizeObserver) as soon as the chart first gains a real width.
+      this.needsFit = true;
+      const refit = () => {
+        if (this.controller === controller && this.isConnected) {
+          controller.fitContent();
+          if (this.chartEl.clientWidth > 0) this.needsFit = false;
+        }
+      };
+      refit();
+      requestAnimationFrame(() => requestAnimationFrame(refit));
       this.historyLoaded = true;
       this.error = undefined;
     } catch (e) {
@@ -246,12 +282,12 @@ export class LightweightChartsCard extends LitElement {
   /** Append the newest state of each entity as a live point. */
   private pushLive(): void {
     if (!this.hass || !this.config) return;
+    const off = tzOffsetSeconds();
     this.config.series.forEach((s, i) => {
       const stateObj = this.hass!.states[s.entity];
       if (!stateObj) return;
-      const time = Math.floor(
-        new Date(stateObj.last_updated).getTime() / 1000,
-      );
+      const time =
+        Math.floor(new Date(stateObj.last_updated).getTime() / 1000) + off;
       if (time <= this.liveCursor[i]) return; // nothing new
 
       if (s.type === "candlestick" && s.ohlc_attributes) {
@@ -331,12 +367,14 @@ export class LightweightChartsCard extends LitElement {
       el.setAttribute("hidden", "");
       return;
     }
-    const lang = this.hass?.language || "en";
-    const timeStr = new Date(e.time * 1000).toLocaleString(lang, {
+    const timeStr = new Date(e.time * 1000).toLocaleString(this.localeString(), {
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      // e.time already carries the local offset (see loadHistory); read it back
+      // as UTC so we don't shift twice.
+      timeZone: "UTC",
     });
 
     let rows = "";
@@ -404,6 +442,16 @@ export class LightweightChartsCard extends LitElement {
     );
   }
 
+  /** BCP-47 locale for date formatting (HA locale → language → browser). */
+  private localeString(): string {
+    return (
+      this.hass?.locale?.language ||
+      this.hass?.language ||
+      navigator.language ||
+      "en"
+    );
+  }
+
   private currentValue(s: SeriesConfig): string | null {
     const stateObj = this.hass?.states[s.entity];
     if (!stateObj) return null;
@@ -422,6 +470,8 @@ export class LightweightChartsCard extends LitElement {
 
   public override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
     this.controller?.destroy();
     this.controller = undefined;
     this.historyLoaded = false;

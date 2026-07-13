@@ -243,6 +243,11 @@ export class ChartController {
     this.chart.timeScale().applyOptions({ uniformDistribution: value });
   }
 
+  /** Locale used for axis date/number formatting (e.g. "de-DE"). */
+  setLocale(locale: string): void {
+    this.chart.applyOptions({ localization: { locale } });
+  }
+
   fitContent(): void {
     this.chart.timeScale().fitContent();
   }
