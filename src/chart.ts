@@ -13,11 +13,9 @@ import {
   type LineData,
   type CandlestickData,
   LineType,
-  LineStyle,
 } from "lightweight-charts";
 
 import type { SeriesConfig, LinePoint, OhlcPoint } from "./types";
-import type { Whitespace } from "./history";
 import { chartOptions, resolveTheme, type ResolvedTheme } from "./theme";
 import { paletteColor } from "./const";
 
@@ -25,12 +23,10 @@ interface ManagedSeries {
   api: ISeriesApi<LwSeriesType>;
   cfg: SeriesConfig;
   paneIndex: number;
-  /** Lazily created faint dashed overlay that bridges data gaps. */
-  gapApi?: ISeriesApi<"Line">;
 }
 
-/** Any point we may feed to a series: value point, OHLC, or whitespace. */
-type AnyPoint = LinePoint | OhlcPoint | Whitespace;
+/** Any point we may feed to a series. */
+type AnyPoint = LinePoint | OhlcPoint;
 
 const asTime = (t: number): UTCTimestamp => t as UTCTimestamp;
 
@@ -62,10 +58,7 @@ export class ChartController {
    * `panes[i]` is the target pane index for series i (0 = main).
    */
   setSeries(configs: SeriesConfig[], panes?: number[]): void {
-    for (const s of this.series) {
-      if (s.gapApi) this.chart.removeSeries(s.gapApi);
-      this.chart.removeSeries(s.api);
-    }
+    for (const s of this.series) this.chart.removeSeries(s.api);
     this.series = [];
 
     configs.forEach((cfg, i) => {
@@ -226,37 +219,6 @@ export class ChartController {
     const shaped = data.map((p) => ({ ...p, time: asTime(p.time) }));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     s.api.setData(shaped as any);
-  }
-
-  /**
-   * Set the faint dashed "gap bridge" overlay for series i. Creates the overlay
-   * lazily (same pane & price scale). Pass an empty array to clear it.
-   */
-  setGapData(i: number, data: Array<LinePoint | Whitespace>): void {
-    const s = this.series[i];
-    if (!s) return;
-    if (!s.gapApi) {
-      if (data.length === 0) return;
-      s.gapApi = this.chart.addSeries(
-        LineSeries,
-        {
-          color: this.theme.dark
-            ? "rgba(170,178,189,0.7)"
-            : "rgba(90,98,110,0.6)",
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          priceScaleId: s.cfg.axis === "left" ? "left" : "right",
-          lastValueVisible: false,
-          priceLineVisible: false,
-          crosshairMarkerVisible: false,
-          pointMarkersVisible: false,
-        },
-        s.paneIndex,
-      );
-    }
-    const shaped = data.map((p) => ({ ...p, time: asTime(p.time) }));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    s.gapApi.setData(shaped as any);
   }
 
   /** Append/replace the latest live point for series index i. */

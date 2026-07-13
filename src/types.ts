@@ -66,6 +66,11 @@ export interface RangePreset {
   hours: number;
 }
 
+export interface ResolutionPreset {
+  label: string;
+  seconds: number;
+}
+
 export interface ChartCardConfig {
   type: string;
   title?: string;
@@ -93,13 +98,12 @@ export interface ChartCardConfig {
    * Default true.
    */
   uniform_distribution?: boolean;
-  /** Bridge missing-data ranges with a faint dashed line. Default true. */
-  show_gaps?: boolean;
-  /**
-   * Gap threshold in seconds — a bigger time jump between two samples counts as
-   * "no data". Defaults to an automatic value (≈8× the median sampling gap).
-   */
-  gap_threshold?: number;
+  /** Resolution buttons (downsampling). Defaults to 1s/10s/30s/1m/5m/15m. */
+  resolutions?: ResolutionPreset[];
+  /** Toggle the resolution buttons. Default true. */
+  show_resolution_buttons?: boolean;
+  /** Active downsampling bucket in seconds (0 = full resolution). */
+  resolution?: number;
   series: SeriesConfig[];
 }
 

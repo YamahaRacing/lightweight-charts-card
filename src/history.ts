@@ -59,63 +59,35 @@ export function toLinePoints(
   return out;
 }
 
-/** A point with no value — breaks the line / marks a data gap. */
-export type Whitespace = { time: number };
-
-function medianDelta(points: LinePoint[]): number {
-  if (points.length < 2) return 0;
-  const deltas: number[] = [];
-  for (let i = 1; i < points.length; i++) {
-    deltas.push(points[i].time - points[i - 1].time);
-  }
-  deltas.sort((a, b) => a - b);
-  return deltas[Math.floor(deltas.length / 2)] || 0;
-}
-
 /**
- * Split a series into the drawable line (with whitespace inserted so it doesn't
- * paint a misleading straight line across missing data) and a "gap" dataset
- * that bridges each gap — rendered as a faint dashed line. `gapSec <= 0` picks
- * an automatic threshold from the median sampling interval.
+ * Downsample line points into fixed-width time buckets, averaging the values in
+ * each bucket. `bucketSec <= 0` returns the points unchanged. Reduces overplot
+ * and point count for long ranges / coarse resolutions.
  */
-export function splitGaps(
+export function downsampleAvg(
   points: LinePoint[],
-  gapSec: number,
-): { main: Array<LinePoint | Whitespace>; gap: Array<LinePoint | Whitespace> } {
-  const main: Array<LinePoint | Whitespace> = [];
-  const gap: Array<LinePoint | Whitespace> = [];
-  if (points.length < 2) return { main: [...points], gap };
-
-  const threshold =
-    gapSec > 0 ? gapSec : Math.max(120, medianDelta(points) * 8);
-
-  let lastGapEndIdx = -2;
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    main.push(p);
-    if (i < points.length - 1) {
-      const next = points[i + 1];
-      if (next.time - p.time > threshold) {
-        // Break the coloured line across the gap.
-        const mid = Math.floor((p.time + next.time) / 2);
-        if (mid > p.time && mid < next.time) main.push({ time: mid });
-        // Bridge the gap with the dashed overlay.
-        if (i === lastGapEndIdx) {
-          gap.push({ time: next.time, value: next.value });
-        } else {
-          if (gap.length) {
-            const prev = gap[gap.length - 1].time;
-            const w = Math.floor((prev + p.time) / 2);
-            if (w > prev && w < p.time) gap.push({ time: w });
-          }
-          gap.push({ time: p.time, value: p.value });
-          gap.push({ time: next.time, value: next.value });
-        }
-        lastGapEndIdx = i + 1;
-      }
+  bucketSec: number,
+): LinePoint[] {
+  if (bucketSec <= 0 || points.length < 2) return points;
+  const out: LinePoint[] = [];
+  let bucket = Math.floor(points[0].time / bucketSec);
+  let sum = 0;
+  let count = 0;
+  let lastTime = points[0].time;
+  for (const p of points) {
+    const b = Math.floor(p.time / bucketSec);
+    if (b !== bucket && count > 0) {
+      out.push({ time: lastTime, value: sum / count });
+      sum = 0;
+      count = 0;
+      bucket = b;
     }
+    sum += p.value;
+    count++;
+    lastTime = p.time;
   }
-  return { main, gap };
+  if (count > 0) out.push({ time: lastTime, value: sum / count });
+  return out;
 }
 
 /** Build the "on" state set for a binary series (lower-cased). */

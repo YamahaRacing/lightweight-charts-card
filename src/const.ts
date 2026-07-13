@@ -1,6 +1,6 @@
-import type { RangePreset } from "./types";
+import type { RangePreset, ResolutionPreset } from "./types";
 
-export const CARD_VERSION = "0.1.6";
+export const CARD_VERSION = "0.1.7";
 export const CARD_TAG = "lightweight-charts-card";
 export const EDITOR_TAG = "lightweight-charts-card-editor";
 
@@ -9,6 +9,16 @@ export const DEFAULT_RANGES: RangePreset[] = [
   { label: "1h", hours: 1 },
   { label: "24h", hours: 24 },
   { label: "7d", hours: 168 },
+];
+
+/** Default resolution (downsampling) buttons. */
+export const DEFAULT_RESOLUTIONS: ResolutionPreset[] = [
+  { label: "1s", seconds: 1 },
+  { label: "10s", seconds: 10 },
+  { label: "30s", seconds: 30 },
+  { label: "1m", seconds: 60 },
+  { label: "5m", seconds: 300 },
+  { label: "15m", seconds: 900 },
 ];
 
 /** States treated as "on" (=1) for `type: binary` unless overridden. */

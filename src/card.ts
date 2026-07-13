@@ -15,17 +15,18 @@ import {
   toOhlcPoints,
   toBinaryPoints,
   onStateSet,
-  splitGaps,
+  downsampleAvg,
 } from "./history";
 import {
   CARD_TAG,
   EDITOR_TAG,
   CARD_VERSION,
   DEFAULT_RANGES,
+  DEFAULT_RESOLUTIONS,
   paletteColor,
   stateToBinary,
 } from "./const";
-import type { RangePreset } from "./types";
+import type { RangePreset, ResolutionPreset } from "./types";
 
 const isDark = (hass?: HomeAssistant): boolean => !!hass?.themes?.darkMode;
 
@@ -55,6 +56,10 @@ export class LightweightChartsCard extends LitElement {
   @state() private activeHours = 24;
   /** How many hours of data are currently loaded (>= activeHours). */
   private loadedHours = 24;
+  /** Active downsampling bucket in seconds (0 = full resolution). */
+  @state() private activeResolution = 0;
+  /** Per-series time-shifted points before downsampling (for instant re-bucket). */
+  private seriesPoints: Array<LinePoint[] | OhlcPoint[]> = [];
   @query(".chart") private chartEl!: HTMLDivElement;
   @query(".tooltip") private tooltipEl?: HTMLDivElement;
 
@@ -82,6 +87,8 @@ export class LightweightChartsCard extends LitElement {
     // the visible window. Start with the visible window matching the load.
     this.loadedHours = config.hours_to_show ?? 24;
     this.activeHours = config.hours_to_show ?? 24;
+    this.activeResolution =
+      config.resolution ?? (config.resolutions ?? DEFAULT_RESOLUTIONS)[0].seconds;
     // Rebuild series on next render if the chart already exists.
     if (this.controller) {
       this.controller.setSeries(config.series, this.resolvePanes());
@@ -181,23 +188,72 @@ export class LightweightChartsCard extends LitElement {
   }
 
   private renderToolbar() {
-    if (!this.config || this.config.show_range_buttons === false) return nothing;
+    if (!this.config) return nothing;
+    const showRes =
+      this.config.show_resolution_buttons !== false &&
+      this.effectiveResolutions().length > 1;
     const ranges = this.effectiveRanges();
-    if (ranges.length < 2) return nothing;
+    const showRange =
+      this.config.show_range_buttons !== false && ranges.length > 1;
+    if (!showRes && !showRange) return nothing;
+
     return html`<div class="toolbar">
-      ${ranges.map(
-        (r) => html`<button
-          class=${`range${this.activeHours === r.hours ? " active" : ""}`}
-          @click=${() => this.selectRange(r.hours)}
-        >
-          ${r.label}
-        </button>`,
-      )}
+      ${showRes
+        ? html`<div class="seg" title="Auflösung">
+            ${this.effectiveResolutions().map(
+              (r) => html`<button
+                class=${`btn${this.activeResolution === r.seconds ? " active" : ""}`}
+                @click=${() => this.selectResolution(r.seconds)}
+              >
+                ${r.label}
+              </button>`,
+            )}
+          </div>`
+        : nothing}
+      <span class="spacer"></span>
+      ${showRange
+        ? html`<div class="seg" title="Zeitraum">
+            ${ranges.map(
+              (r) => html`<button
+                class=${`btn${this.activeHours === r.hours ? " active" : ""}`}
+                @click=${() => this.selectRange(r.hours)}
+              >
+                ${r.label}
+              </button>`,
+            )}
+          </div>`
+        : nothing}
     </div>`;
   }
 
   private effectiveRanges(): RangePreset[] {
     return this.config?.ranges ?? DEFAULT_RANGES;
+  }
+
+  private effectiveResolutions(): ResolutionPreset[] {
+    return this.config?.resolutions ?? DEFAULT_RESOLUTIONS;
+  }
+
+  private selectResolution(seconds: number): void {
+    if (this.activeResolution === seconds || !this.config) return;
+    this.activeResolution = seconds;
+    this.config.series.forEach((_, i) => this.applySeriesData(i));
+    this.applyVisibleRange();
+  }
+
+  /** Push the stored points for series i, downsampled to the active resolution. */
+  private applySeriesData(i: number): void {
+    const s = this.config?.series[i];
+    const pts = this.seriesPoints[i];
+    if (!this.controller || !s || !pts) return;
+    if (s.type === "candlestick" || s.type === "binary" || this.activeResolution <= 0) {
+      this.controller.setData(i, pts);
+    } else {
+      this.controller.setData(
+        i,
+        downsampleAvg(pts as LinePoint[], this.activeResolution),
+      );
+    }
   }
 
   private selectRange(hours: number): void {
@@ -264,32 +320,21 @@ export class LightweightChartsCard extends LitElement {
       if (this.controller !== controller || !this.isConnected) return;
 
       const off = tzOffsetSeconds();
-      const showGaps = cfg.show_gaps !== false;
-      const gapSec = cfg.gap_threshold ?? 0; // 0 = auto (per series)
-      cfg.series.forEach((s, i) => {
+      this.seriesPoints = cfg.series.map((s) => {
         const rows = raw[s.entity];
-        if (s.type === "candlestick") {
-          const pts = toOhlcPoints(rows, s);
-          for (const p of pts) p.time += off;
-          controller.setData(i, pts);
-          if (pts.length) this.liveCursor[i] = pts[pts.length - 1].time;
-          return;
-        }
-        const pts =
-          s.type === "binary" ? toBinaryPoints(rows, s) : toLinePoints(rows, s);
+        let pts: LinePoint[] | OhlcPoint[];
+        if (s.type === "candlestick") pts = toOhlcPoints(rows, s);
+        else if (s.type === "binary") pts = toBinaryPoints(rows, s);
+        else pts = toLinePoints(rows, s);
         // Bake local time into the timestamps so the (UTC-rendering) axis shows
         // local wall-clock. The tooltip formats these back as UTC.
         for (const p of pts) p.time += off;
-        if (pts.length) this.liveCursor[i] = pts[pts.length - 1].time;
-
-        if (showGaps && s.type !== "binary") {
-          const { main, gap } = splitGaps(pts, gapSec);
-          controller.setData(i, main);
-          controller.setGapData(i, gap);
-        } else {
-          controller.setData(i, pts);
-          controller.setGapData(i, []);
-        }
+        return pts;
+      });
+      cfg.series.forEach((_s, i) => {
+        const last = this.seriesPoints[i][this.seriesPoints[i].length - 1];
+        if (last) this.liveCursor[i] = last.time;
+        this.applySeriesData(i);
       });
 
       // The visible window must be applied after the chart has a real width
@@ -527,36 +572,45 @@ export class LightweightChartsCard extends LitElement {
       --ha-card-header-font-size: 1.05rem;
     }
 
-    /* Segmented range control */
+    /* Segmented controls (resolution + range) */
     .toolbar {
       display: flex;
-      gap: 4px;
-      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
       padding: 12px var(--lwc-pad) 2px;
     }
-    .toolbar .range {
+    .toolbar .spacer {
+      flex: 1;
+    }
+    .toolbar .seg {
+      display: inline-flex;
+      gap: 2px;
+      padding: 2px;
+      border-radius: 11px;
+      background: color-mix(in srgb, var(--primary-text-color) 6%, transparent);
+    }
+    .toolbar .btn {
       cursor: pointer;
       border: none;
       background: transparent;
       color: var(--secondary-text-color);
       border-radius: 9px;
-      padding: 4px 12px;
-      font-size: 0.78rem;
+      padding: 4px 11px;
+      font-size: 0.76rem;
       font-weight: 600;
       letter-spacing: 0.01em;
       line-height: 1.5;
       transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
     }
-    .toolbar .range:hover {
+    .toolbar .btn:hover {
       color: var(--primary-text-color);
-      background: color-mix(in srgb, var(--primary-text-color) 8%, transparent);
     }
-    .toolbar .range:active {
-      transform: scale(0.96);
+    .toolbar .btn:active {
+      transform: scale(0.94);
     }
-    .toolbar .range.active {
-      background: color-mix(in srgb, var(--primary-color) 16%, transparent);
-      color: var(--primary-color);
+    .toolbar .btn.active {
+      background: var(--primary-color);
+      color: var(--text-primary-color, #fff);
     }
 
     .chart-wrap {
