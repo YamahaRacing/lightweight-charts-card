@@ -21,9 +21,14 @@ live-streaming sensors.
 
 ![Glass theme](docs/screenshot-glass.png)
 
-**Visual editor** (grouped sections, inline hints, DE/EN):
+**Visual editor** — grouped sections, inline hints, DE/EN:
 
-![Editor](docs/screenshot-editor.png)
+![Editor: general & display](docs/screenshot-editor.png)
+
+**Series editor** — type-aware fields (e.g. a binary series hides decimals/
+factor and shows "count as on"):
+
+![Editor: series](docs/screenshot-editor-series.png)
 
 </details>
 

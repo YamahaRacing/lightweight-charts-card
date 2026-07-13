@@ -7,4 +7,5 @@ exactly these names:
 |------|-------|
 | `screenshot-default.png` | The card with the `default` theme |
 | `screenshot-glass.png` | The card with the `glass` (glassmorphism) theme |
-| `screenshot-editor.png` | The visual editor (grouped sections, hints) |
+| `screenshot-editor.png` | The visual editor (general & display sections) |
+| `screenshot-editor-series.png` | The series editor (type-aware fields) |
