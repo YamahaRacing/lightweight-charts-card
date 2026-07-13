@@ -78,8 +78,10 @@ export interface ChartCardConfig {
   hours_to_show?: number;
   /** Card body height in px. Default 300. */
   height?: number;
-  /** auto | dark | light. Default auto (follows HA theme). */
-  theme?: "auto" | "dark" | "light";
+  /** Visual style. `default` or `glass` (glassmorphism). Light/dark follows HA. */
+  theme?: "default" | "glass";
+  /** Editor + card UI language. Defaults to the HA language. */
+  language?: "de" | "en";
   /** Show the built-in legend row. Default true. */
   show_legend?: boolean;
   /** Down-sample: only pull significant state changes. Default true. */

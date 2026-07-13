@@ -3,6 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 
 import type { HomeAssistant, ChartCardConfig, SeriesConfig } from "./types";
 import { EDITOR_TAG, paletteColor } from "./const";
+import { resolveLang, t, type Lang } from "./i18n";
 
 const SERIES_TYPES = [
   "line",
@@ -25,6 +26,10 @@ export class LightweightChartsCardEditor extends LitElement {
 
   public setConfig(config: ChartCardConfig): void {
     this.config = config;
+  }
+
+  private uiLang(): Lang {
+    return resolveLang(this.config?.language, this.hass?.language);
   }
 
   private emit(next: ChartCardConfig): void {
@@ -77,12 +82,17 @@ export class LightweightChartsCardEditor extends LitElement {
 
   // ---- Field helpers ------------------------------------------------------
 
+  private hint(text?: string): TemplateResult | typeof nothing {
+    return text ? html`<small class="hint">${text}</small>` : nothing;
+  }
+
   private text(
     label: string,
     value: string | undefined,
     on: (v: string | undefined) => void,
     list?: string,
     placeholder?: string,
+    hint?: string,
   ): TemplateResult {
     return html`<label class="field"
       ><span>${label}</span>
@@ -92,6 +102,7 @@ export class LightweightChartsCardEditor extends LitElement {
         placeholder=${placeholder ?? nothing}
         @input=${(e: Event) => on((e.target as HTMLInputElement).value)}
       />
+      ${this.hint(hint)}
     </label>`;
   }
 
@@ -99,7 +110,7 @@ export class LightweightChartsCardEditor extends LitElement {
     label: string,
     value: number | undefined,
     on: (v: number | undefined) => void,
-    opts: { min?: number; step?: number; placeholder?: string } = {},
+    opts: { min?: number; step?: number; placeholder?: string; hint?: string } = {},
   ): TemplateResult {
     return html`<label class="field"
       ><span>${label}</span>
@@ -114,22 +125,30 @@ export class LightweightChartsCardEditor extends LitElement {
           on(v === "" ? undefined : Number(v));
         }}
       />
+      ${this.hint(opts.hint)}
     </label>`;
   }
 
   private select(
     label: string,
     value: string,
-    options: string[],
+    options: Array<string | { value: string; label: string }>,
     on: (v: string) => void,
+    hint?: string,
   ): TemplateResult {
+    const opts = options.map((o) =>
+      typeof o === "string" ? { value: o, label: o } : o,
+    );
     return html`<label class="field"
       ><span>${label}</span>
       <select @change=${(e: Event) => on((e.target as HTMLSelectElement).value)}>
-        ${options.map(
-          (o) => html`<option value=${o} ?selected=${o === value}>${o}</option>`,
+        ${opts.map(
+          (o) => html`<option value=${o.value} ?selected=${o.value === value}>
+            ${o.label}
+          </option>`,
         )}
       </select>
+      ${this.hint(hint)}
     </label>`;
   }
 
@@ -180,6 +199,8 @@ export class LightweightChartsCardEditor extends LitElement {
   protected override render() {
     if (!this.config) return nothing;
     const c = this.config;
+    const l = this.uiLang();
+    const tr = (k: string) => t(l, k);
     const entityIds = this.hass ? Object.keys(this.hass.states) : [];
 
     return html`
@@ -188,68 +209,84 @@ export class LightweightChartsCardEditor extends LitElement {
           ${entityIds.map((id) => html`<option value=${id}></option>`)}
         </datalist>
         ${this.section(
-          "Allgemein",
+          tr("general"),
           true,
           html`<div class="grid">
-            ${this.text("Titel", c.title, (v) => this.setRoot("title", v))}
-            ${this.num("Höhe (px)", c.height, (v) => this.setRoot("height", v), {
+            ${this.text(tr("title"), c.title, (v) => this.setRoot("title", v))}
+            ${this.num(tr("height"), c.height, (v) => this.setRoot("height", v), {
               min: 80,
               placeholder: "300",
+              hint: tr("hint.height"),
             })}
-            ${this.select("Theme", c.theme ?? "auto", ["auto", "dark", "light"], (v) =>
-              this.setRoot("theme", v),
+            ${this.select(
+              tr("theme"),
+              c.theme ?? "default",
+              ["default", "glass"],
+              (v) => this.setRoot("theme", v),
+              tr("hint.theme"),
+            )}
+            ${this.select(
+              tr("language"),
+              l,
+              [
+                { value: "de", label: "Deutsch" },
+                { value: "en", label: "English" },
+              ],
+              (v) => this.setRoot("language", v),
+              tr("hint.language"),
             )}
             ${this.num(
-              "Geladene Stunden",
+              tr("hoursToShow"),
               c.hours_to_show,
               (v) => this.setRoot("hours_to_show", v),
-              { min: 1, placeholder: "24" },
+              { min: 1, placeholder: "24", hint: tr("hint.hoursToShow") },
             )}
           </div>`,
         )}
         ${this.section(
-          "Anzeige",
+          tr("display"),
           true,
           html`<div class="checks">
-            ${this.check("Legende", c.show_legend !== false, (v) =>
+            ${this.check(tr("legend"), c.show_legend !== false, (v) =>
               this.setRoot("show_legend", v),
             )}
-            ${this.check("Tooltip", c.tooltip !== false, (v) =>
+            ${this.check(tr("tooltip"), c.tooltip !== false, (v) =>
               this.setRoot("tooltip", v),
             )}
-            ${this.check("Zeitraum-Buttons", c.show_range_buttons !== false, (v) =>
+            ${this.check(tr("rangeButtons"), c.show_range_buttons !== false, (v) =>
               this.setRoot("show_range_buttons", v),
             )}
             ${this.check(
-              "Auflösungs-Buttons",
+              tr("resolutionButtons"),
               c.show_resolution_buttons !== false,
               (v) => this.setRoot("show_resolution_buttons", v),
             )}
             ${this.check(
-              "Einheitliche Zeitachse",
+              tr("uniformAxis"),
               c.uniform_distribution !== false,
               (v) => this.setRoot("uniform_distribution", v),
             )}
-            ${this.check("Auto-Pane pro Einheit", !!c.auto_pane_by_unit, (v) =>
+            ${this.check(tr("autoPaneUnit"), !!c.auto_pane_by_unit, (v) =>
               this.setRoot("auto_pane_by_unit", v),
             )}
           </div>`,
         )}
         ${this.section(
-          `Serien (${c.series.length})`,
+          `${tr("series")} (${c.series.length})`,
           true,
-          html`${c.series.map((s, i) => this.seriesCard(s, i))}
+          html`${c.series.map((s, i) => this.seriesCard(s, i, l))}
             <button class="add" @click=${() => this.addSeries()}>
-              + Serie hinzufügen
+              ${tr("addSeries")}
             </button>`,
         )}
       </div>
     `;
   }
 
-  private seriesCard(s: SeriesConfig, i: number): TemplateResult {
+  private seriesCard(s: SeriesConfig, i: number, l: Lang): TemplateResult {
+    const tr = (k: string) => t(l, k);
     const color = s.color ?? paletteColor(i);
-    const title = s.name || s.entity || "Neue Serie";
+    const title = s.name || s.entity || tr("newSeries");
     const type = s.type ?? "line";
     const isBinary = type === "binary";
     const hasLineWidth = ["line", "area", "baseline", "binary"].includes(type);
@@ -258,10 +295,10 @@ export class LightweightChartsCardEditor extends LitElement {
       <summary>
         <span class="dot" style=${`background:${color}`}></span>
         <span class="stitle">${title}</span>
-        <span class="stype">${s.type ?? "line"}</span>
+        <span class="stype">${type}</span>
         <button
           class="del"
-          title="Entfernen"
+          title=${tr("remove")}
           @click=${(e: Event) => {
             e.preventDefault();
             e.stopPropagation();
@@ -273,35 +310,40 @@ export class LightweightChartsCardEditor extends LitElement {
       </summary>
       <div class="grid">
         ${this.text(
-          "Entity",
+          tr("entity"),
           s.entity,
           (v) => this.setSeries(i, { entity: v ?? "" }),
           "lwc-entities",
         )}
-        ${this.text("Name", s.name, (v) => this.setSeries(i, { name: v }))}
-        ${this.select(
-          "Typ",
-          s.type ?? "line",
-          SERIES_TYPES,
-          (v) => this.setSeries(i, { type: v as SeriesConfig["type"] }),
+        ${this.text(tr("name"), s.name, (v) => this.setSeries(i, { name: v }))}
+        ${this.select(tr("type"), type, SERIES_TYPES, (v) =>
+          this.setSeries(i, { type: v as SeriesConfig["type"] }),
         )}
         ${this.select(
-          "Achse",
+          tr("axis"),
           s.axis ?? "right",
           ["right", "left"],
           (v) => this.setSeries(i, { axis: v as SeriesConfig["axis"] }),
         )}
-        ${this.color("Farbe", color, (v) => this.setSeries(i, { color: v }))}
-        ${this.num("Pane", s.pane, (v) => this.setSeries(i, { pane: v }), {
+        ${this.color(tr("color"), color, (v) => this.setSeries(i, { color: v }))}
+        ${this.num(tr("pane"), s.pane, (v) => this.setSeries(i, { pane: v }), {
           min: 0,
           placeholder: "auto",
+          hint: tr("hint.pane"),
         })}
         ${isBinary
           ? nothing
-          : this.text("Einheit", s.unit, (v) => this.setSeries(i, { unit: v }))}
+          : this.text(
+              tr("unit"),
+              s.unit,
+              (v) => this.setSeries(i, { unit: v }),
+              undefined,
+              undefined,
+              tr("hint.unit"),
+            )}
         ${hasLineWidth
           ? this.num(
-              "Linienbreite",
+              tr("lineWidth"),
               s.line_width,
               (v) => this.setSeries(i, { line_width: v }),
               { min: 1, step: 1, placeholder: "2" },
@@ -309,39 +351,39 @@ export class LightweightChartsCardEditor extends LitElement {
           : nothing}
         ${hasFill
           ? this.num(
-              "Füllung (0–1)",
+              tr("fill"),
               s.fill_opacity,
               (v) => this.setSeries(i, { fill_opacity: v }),
-              { min: 0, step: 0.05, placeholder: "0.4" },
+              { min: 0, step: 0.05, placeholder: "0.4", hint: tr("hint.fill") },
             )
           : nothing}
         ${isBinary
           ? nothing
           : this.num(
-              "Nachkommastellen",
+              tr("decimals"),
               s.precision,
               (v) => this.setSeries(i, { precision: v }),
-              { min: 0, step: 1 },
+              { min: 0, step: 1, hint: tr("hint.decimals") },
             )}
         ${isBinary
           ? nothing
           : this.num(
-              "Faktor (× Wert)",
+              tr("factor"),
               s.factor,
               (v) => this.setSeries(i, { factor: v }),
-              { step: 0.001, placeholder: "1" },
+              { step: 0.001, placeholder: "1", hint: tr("hint.factor") },
             )}
         ${type === "baseline"
           ? this.num(
-              "Baseline-Wert",
+              tr("baselineValue"),
               s.baseline_value,
               (v) => this.setSeries(i, { baseline_value: v }),
-              { step: 0.1, placeholder: "0" },
+              { step: 0.1, placeholder: "0", hint: tr("hint.baselineValue") },
             )
           : nothing}
         ${isBinary
           ? this.text(
-              'Als „An" werten',
+              tr("onStates"),
               (s.on_states ?? []).join(", "),
               (v) =>
                 this.setSeries(i, {
@@ -354,6 +396,7 @@ export class LightweightChartsCardEditor extends LitElement {
                 }),
               undefined,
               "on, open, heat",
+              tr("hint.onStates"),
             )
           : nothing}
       </div>
@@ -415,6 +458,12 @@ export class LightweightChartsCardEditor extends LitElement {
     .field > span {
       font-weight: 600;
       letter-spacing: 0.02em;
+    }
+    .field .hint {
+      font-size: 0.68rem;
+      line-height: 1.3;
+      color: color-mix(in srgb, var(--secondary-text-color) 85%, transparent);
+      opacity: 0.85;
     }
     input,
     select {

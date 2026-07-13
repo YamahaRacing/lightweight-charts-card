@@ -27,6 +27,7 @@ import {
   stateToBinary,
 } from "./const";
 import type { RangePreset, ResolutionPreset } from "./types";
+import { resolveLang, t, type Lang } from "./i18n";
 
 const isDark = (hass?: HomeAssistant): boolean => !!hass?.themes?.darkMode;
 
@@ -165,13 +166,18 @@ export class LightweightChartsCard extends LitElement {
     }
   }
 
+  private uiLang(): Lang {
+    return resolveLang(this.config?.language, this.hass?.language);
+  }
+
   protected override render() {
+    const glass = this.config?.theme === "glass" ? "glass" : "";
     if (this.error) {
-      return html`<ha-card .header=${this.config?.title}>
+      return html`<ha-card class=${glass} .header=${this.config?.title}>
         <div class="error">${this.error}</div>
       </ha-card>`;
     }
-    return html`<ha-card .header=${this.config?.title}>
+    return html`<ha-card class=${glass} .header=${this.config?.title}>
       ${this.renderToolbar()}
       <div class="chart-wrap">
         <div
@@ -197,9 +203,10 @@ export class LightweightChartsCard extends LitElement {
       this.config.show_range_buttons !== false && ranges.length > 1;
     if (!showRes && !showRange) return nothing;
 
+    const lang = this.uiLang();
     return html`<div class="toolbar">
       ${showRes
-        ? html`<div class="seg" title="Auflösung">
+        ? html`<div class="seg" title=${t(lang, "resolution")}>
             ${this.effectiveResolutions().map(
               (r) => html`<button
                 class=${`btn${this.activeResolution === r.seconds ? " active" : ""}`}
@@ -212,7 +219,7 @@ export class LightweightChartsCard extends LitElement {
         : nothing}
       <span class="spacer"></span>
       ${showRange
-        ? html`<div class="seg" title="Zeitraum">
+        ? html`<div class="seg" title=${t(lang, "timeRange")}>
             ${ranges.map(
               (r) => html`<button
                 class=${`btn${this.activeHours === r.hours ? " active" : ""}`}
@@ -566,10 +573,20 @@ export class LightweightChartsCard extends LitElement {
     ha-card {
       overflow: hidden;
       border-radius: var(--lwc-radius);
-    }
-    /* Header: tighter, modern tracking. */
-    ha-card {
       --ha-card-header-font-size: 1.05rem;
+    }
+    /* Glassmorphism style */
+    ha-card.glass {
+      background: color-mix(
+        in srgb,
+        var(--card-background-color, #1c2128) 55%,
+        transparent
+      );
+      -webkit-backdrop-filter: blur(22px) saturate(1.5);
+      backdrop-filter: blur(22px) saturate(1.5);
+      border: 1px solid
+        color-mix(in srgb, var(--primary-text-color, #fff) 14%, transparent);
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.25);
     }
 
     /* Segmented controls (resolution + range) */
