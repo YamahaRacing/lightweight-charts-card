@@ -35,6 +35,7 @@ live-streaming sensors.
 - 🧱 **Multi-pane** — stack series in separate panes (e.g. kW vs °C), manual or auto-by-unit
 - 🔲 **Boolean states** — render on/off entities as a stepped signal in a slim pane to see how a value reacts after a switch
 - ⏳ **Loading spinner** while history is fetched
+- 📏 **Uniformly distributed time axis** (`uniformDistribution`) + a clean, modern look (glassy tooltip, chip legend, subtle grid)
 - 🪟 **Multiple series & dual axes** (left/right price scales)
 - 🕯️ **Line, area, baseline, histogram & candlestick** series
 - 🌗 Follows the Home Assistant light/dark theme automatically
@@ -123,9 +124,10 @@ series:
 ### Boolean states (see how a value reacts to a switch)
 
 Use `type: binary` for on/off entities (valves, pumps, switches, binary
-sensors). They render as a stepped 0/1 signal in their own slim pane directly
-below the graphs, time-aligned — so you can read "valve opened here → temperature
-started rising":
+sensors). Each renders as a stepped 0/1 signal in **its own slim pane, stacked
+below the graphs** (PLC / S7-trace style), time-aligned — so you can read
+"valve opened here → temperature started rising". Group several booleans into
+one lane by giving them the same `pane`.
 
 ```yaml
 type: custom:lightweight-charts-card
@@ -176,6 +178,7 @@ series:
 | `show_range_buttons` | card | `true` | Toggle the range buttons |
 | `tooltip` | card | `true` | Crosshair tooltip |
 | `auto_pane_by_unit` | card | `false` | Put each distinct unit on its own pane |
+| `uniform_distribution` | card | `true` | Distribute time-axis ticks uniformly (`uniformDistribution`) |
 | `entity` | series | – | **Required.** Entity id |
 | `name` | series | friendly_name | Legend label |
 | `type` | series | `line` | line / area / baseline / histogram / candlestick / binary |

@@ -87,6 +87,12 @@ export interface ChartCardConfig {
   tooltip?: boolean;
   /** Put each distinct unit on its own stacked pane. Default false. */
   auto_pane_by_unit?: boolean;
+  /**
+   * Distribute the time-axis tick marks uniformly instead of tying them to the
+   * (irregular) data points. Maps to Lightweight Charts' `uniformDistribution`.
+   * Default true.
+   */
+  uniform_distribution?: boolean;
   series: SeriesConfig[];
 }
 

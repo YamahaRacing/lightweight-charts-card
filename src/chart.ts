@@ -238,6 +238,11 @@ export class ChartController {
     this.chart.applyOptions(chartOptions(this.theme));
   }
 
+  /** Uniformly distribute time-axis tick marks (vs. tying them to data points). */
+  setUniformDistribution(value: boolean): void {
+    this.chart.timeScale().applyOptions({ uniformDistribution: value });
+  }
+
   fitContent(): void {
     this.chart.timeScale().fitContent();
   }

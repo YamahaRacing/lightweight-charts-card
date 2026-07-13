@@ -105,6 +105,9 @@ export class LightweightChartsCard extends LitElement {
     this.lastDark = isDark(this.hass);
     this.controller = new ChartController(this.chartEl, this.lastDark);
     this.controller.setSeries(this.config.series, this.resolvePanes());
+    this.controller.setUniformDistribution(
+      this.config.uniform_distribution ?? true,
+    );
     this.liveCursor = this.config.series.map(() => -Infinity);
     if (this.config.tooltip !== false) {
       this.controller.subscribeCrosshair((e) => this.updateTooltip(e));
@@ -307,11 +310,13 @@ export class LightweightChartsCard extends LitElement {
       }
     });
 
-    // Pass 2: binary series share one pane placed under the graphs.
-    const binaryPane = nextAnalog;
+    // Pass 2: each binary signal gets its own slim pane, stacked below the
+    // graphs (like a PLC / S7 trace). Explicit `pane` still wins and lets you
+    // group several booleans into one lane on purpose.
+    let nextBinary = nextAnalog;
     cfg.series.forEach((s, i) => {
       if (s.type !== "binary") return;
-      panes[i] = s.pane ?? binaryPane;
+      panes[i] = s.pane ?? nextBinary++;
     });
 
     return panes;
@@ -423,40 +428,59 @@ export class LightweightChartsCard extends LitElement {
   }
 
   static override styles = css`
+    :host {
+      --lwc-radius: 14px;
+      --lwc-pad: 14px;
+    }
     ha-card {
       overflow: hidden;
+      border-radius: var(--lwc-radius);
     }
+    /* Header: tighter, modern tracking. */
+    ha-card {
+      --ha-card-header-font-size: 1.05rem;
+    }
+
+    /* Segmented range control */
     .toolbar {
       display: flex;
-      gap: 6px;
+      gap: 4px;
       justify-content: flex-end;
-      padding: 8px 12px 0;
+      padding: 12px var(--lwc-pad) 2px;
     }
     .toolbar .range {
       cursor: pointer;
-      border: 1px solid var(--divider-color, rgba(127, 127, 127, 0.3));
+      border: none;
       background: transparent;
       color: var(--secondary-text-color);
-      border-radius: 999px;
-      padding: 3px 12px;
-      font-size: 0.8rem;
-      line-height: 1.4;
-      transition: all 0.12s ease;
+      border-radius: 9px;
+      padding: 4px 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      line-height: 1.5;
+      transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
     }
     .toolbar .range:hover {
       color: var(--primary-text-color);
+      background: color-mix(in srgb, var(--primary-text-color) 8%, transparent);
+    }
+    .toolbar .range:active {
+      transform: scale(0.96);
     }
     .toolbar .range.active {
-      background: var(--primary-color);
-      border-color: var(--primary-color);
-      color: var(--text-primary-color, #fff);
+      background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+      color: var(--primary-color);
     }
+
     .chart-wrap {
       position: relative;
     }
     .chart {
       width: 100%;
     }
+
+    /* Loading */
     .loading {
       position: absolute;
       inset: 0;
@@ -466,10 +490,10 @@ export class LightweightChartsCard extends LitElement {
       pointer-events: none;
     }
     .loading .spinner {
-      width: 26px;
-      height: 26px;
+      width: 24px;
+      height: 24px;
       border-radius: 50%;
-      border: 3px solid var(--divider-color, rgba(127, 127, 127, 0.3));
+      border: 2.5px solid color-mix(in srgb, var(--primary-text-color) 14%, transparent);
       border-top-color: var(--primary-color, #2962ff);
       animation: lwc-spin 0.7s linear infinite;
     }
@@ -478,72 +502,88 @@ export class LightweightChartsCard extends LitElement {
         transform: rotate(360deg);
       }
     }
+
+    /* Glassy tooltip */
     .tooltip {
       position: absolute;
       z-index: 5;
       pointer-events: none;
-      min-width: 120px;
-      padding: 8px 10px;
-      border-radius: 8px;
+      min-width: 132px;
+      padding: 9px 11px;
+      border-radius: 12px;
       font-size: 0.8rem;
-      background: var(--card-background-color, #fff);
+      background: color-mix(in srgb, var(--card-background-color, #fff) 78%, transparent);
+      -webkit-backdrop-filter: blur(14px) saturate(1.4);
+      backdrop-filter: blur(14px) saturate(1.4);
       color: var(--primary-text-color);
-      border: 1px solid var(--divider-color, rgba(127, 127, 127, 0.25));
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+      border: 1px solid color-mix(in srgb, var(--primary-text-color) 12%, transparent);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+      transition: opacity 0.12s ease;
     }
     .tooltip[hidden] {
       display: none;
     }
     .tooltip .tt-time {
-      font-weight: 600;
-      margin-bottom: 4px;
-      opacity: 0.75;
+      font-weight: 700;
+      font-size: 0.72rem;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      color: var(--secondary-text-color);
     }
     .tooltip .tt-row {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
       white-space: nowrap;
+      padding: 1px 0;
     }
     .tooltip .tt-dot {
       width: 8px;
       height: 8px;
-      border-radius: 50%;
+      border-radius: 3px;
       flex: none;
     }
     .tooltip .tt-name {
-      opacity: 0.85;
+      color: var(--secondary-text-color);
     }
     .tooltip .tt-val {
       margin-left: auto;
+      padding-left: 14px;
       font-variant-numeric: tabular-nums;
-      font-weight: 600;
+      font-weight: 700;
     }
+
+    /* Chip legend */
     .legend {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
-      padding: 8px 16px 14px;
-      font-size: 0.85rem;
-      color: var(--secondary-text-color);
+      gap: 6px;
+      padding: 10px var(--lwc-pad) calc(var(--lwc-pad) + 2px);
+      font-size: 0.82rem;
     }
     .legend .item {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--primary-text-color) 5%, transparent);
     }
     .legend .dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
+      width: 9px;
+      height: 9px;
+      border-radius: 3px;
       display: inline-block;
     }
     .legend .name {
-      color: var(--primary-text-color);
+      color: var(--secondary-text-color);
+      font-weight: 600;
     }
     .legend .val {
       font-variant-numeric: tabular-nums;
-      opacity: 0.85;
+      font-weight: 700;
+      color: var(--primary-text-color);
     }
     .error {
       padding: 16px;
@@ -558,9 +598,10 @@ export class LightweightChartsCard extends LitElement {
   type: CARD_TAG,
   name: "Lightweight Charts Card",
   description:
-    "Slick, high-performance time-series charts (line, area, candlestick) powered by TradingView Lightweight Charts.",
+    "Slick, high-performance time-series charts — history, live, multi-pane, boolean signals — powered by TradingView Lightweight Charts.",
   preview: true,
-  documentationURL: "https://github.com/your-name/lightweight-charts-card",
+  documentationURL:
+    "https://github.com/YamahaRacing/lightweight-charts-card",
 });
 
 // eslint-disable-next-line no-console
