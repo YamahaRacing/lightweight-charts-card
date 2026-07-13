@@ -1,6 +1,6 @@
 import type { RangePreset, ResolutionPreset } from "./types";
 
-export const CARD_VERSION = "1.0.0";
+export const CARD_VERSION = "1.0.1";
 export const CARD_TAG = "lightweight-charts-card";
 export const EDITOR_TAG = "lightweight-charts-card-editor";
 
