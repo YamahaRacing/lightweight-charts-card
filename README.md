@@ -12,10 +12,20 @@ live-streaming sensors.
 > This is a **custom Lovelace card** (frontend), not a Supervisor *add-on*.
 > Lightweight Charts is a browser library, so charting lives in the dashboard.
 
-<!-- Add screenshots to docs/ and reference them here, e.g.:
-![Overview](docs/overview.png)
-![Multi-pane](docs/multi-pane.png)
--->
+![Default theme](docs/screenshot-default.png)
+
+<details>
+<summary>More screenshots — glass theme &amp; editor</summary>
+
+**Glass theme** (glassmorphism, the dashboard shows through):
+
+![Glass theme](docs/screenshot-glass.png)
+
+**Visual editor** (grouped sections, inline hints, DE/EN):
+
+![Editor](docs/screenshot-editor.png)
+
+</details>
 
 ## Install via HACS
 
@@ -30,16 +40,17 @@ live-streaming sensors.
 
 - 📈 **Sensor history** from the recorder (`history/history_during_period`)
 - ⚡ **Live streaming** — new states are appended in real time
-- 🕘 **Quick range buttons** (1h / 24h / 7d, fully configurable)
+- 🕘 **Range buttons** (1h / 24h / 7d) set the *visible window*; `hours_to_show` sets how much is loaded
+- 🎚️ **Resolution buttons** (1s / 10s / 30s / 1m / 5m / 15m) downsample on the fly
 - 💬 **Rich crosshair tooltip** — time + per-series value & unit
 - 🧱 **Multi-pane** — stack series in separate panes (e.g. kW vs °C), manual or auto-by-unit
-- 🔲 **Boolean states** — render on/off entities as a stepped signal in a slim pane to see how a value reacts after a switch
-- ⏳ **Loading spinner** while history is fetched
-- 📏 **Uniformly distributed time axis** (`uniformDistribution`) + a clean, modern look (glassy tooltip, chip legend, subtle grid)
+- 🔲 **Boolean states** — render on/off entities as a stepped signal in their own slim pane to see how a value reacts after a switch
+- 🕯️ **Line, area, baseline, histogram, candlestick & binary** series
 - 🪟 **Multiple series & dual axes** (left/right price scales)
-- 🕯️ **Line, area, baseline, histogram & candlestick** series
-- 🌗 Follows the Home Assistant light/dark theme automatically
-- 🧩 Visual config editor + full YAML control
+- 🎨 **Two looks** — `default` and a `glass` (glassmorphism) theme; light/dark follows Home Assistant
+- 🌍 **Editor in English or German** (auto-detected, switchable)
+- ⏳ **Loading spinner**, uniform time axis, clean modern styling (glassy tooltip, chip legend, subtle grid)
+- 🧩 Visual config editor with inline hints + full YAML control
 - 📦 One self-contained JS file (library is bundled, stays update-safe)
 
 ## Build
@@ -59,16 +70,15 @@ npm run typecheck  # type safety without emitting
    - Type: **JavaScript Module**
 3. Add a card of type `custom:lightweight-charts-card`.
 
-(Or install via **HACS** as a custom repository once published.)
-
 ## Configuration
 
 ```yaml
 type: custom:lightweight-charts-card
 title: Energy
-hours_to_show: 24
+hours_to_show: 24     # how much data to LOAD (range buttons set the visible window)
 height: 320
-theme: auto          # auto | dark | light
+theme: default        # default | glass
+language: de          # de | en (defaults to the HA language)
 show_legend: true
 significant_changes_only: true
 series:
@@ -84,6 +94,36 @@ series:
     type: line
     axis: right
 ```
+
+### Loading, time range & resolution
+
+Three independent controls, so long ranges stay fast and readable:
+
+- **`hours_to_show`** — how much history is **loaded** (the buffer). A range
+  button larger than this fetches more; smaller ones are instant.
+- **Range buttons** (`ranges`) — the **visible window** via
+  `setVisibleRange` (e.g. show the last hour of the loaded data).
+- **Resolution buttons** (`resolutions`) — **downsample** the loaded points into
+  fixed time buckets (averaged), reducing clutter and point count. Switching is
+  instant (no refetch).
+
+```yaml
+ranges:
+  - { label: "1h",  hours: 1 }
+  - { label: "24h", hours: 24 }
+  - { label: "7d",  hours: 168 }
+resolutions:
+  - { label: "10s", seconds: 10 }
+  - { label: "1m",  seconds: 60 }
+  - { label: "5m",  seconds: 300 }
+resolution: 10        # active bucket in seconds (0 = full resolution)
+```
+
+### Theme
+
+`theme: default` is the standard look; `theme: glass` applies a frosted
+glassmorphism card (blur + translucency) so the dashboard shows through.
+Light/dark always follows Home Assistant.
 
 ### Multi-pane (different units on stacked panes)
 
@@ -169,13 +209,17 @@ series:
 | Key | Scope | Default | Description |
 |-----|-------|---------|-------------|
 | `title` | card | – | Card header |
-| `hours_to_show` | card | `24` | Recorder window in hours |
+| `hours_to_show` | card | `24` | Hours of history to **load** (buffer) |
 | `height` | card | `300` | Chart body height (px) |
-| `theme` | card | `auto` | `auto` follows HA dark mode |
+| `theme` | card | `default` | `default` or `glass` (light/dark follows HA) |
+| `language` | card | HA language | Editor + card language: `de` or `en` |
 | `show_legend` | card | `true` | Toggle the legend row |
 | `significant_changes_only` | card | `true` | Down-sample history fetch |
-| `ranges` | card | 1h/24h/7d | Quick-range buttons (`{label, hours}[]`) |
+| `ranges` | card | 1h/24h/7d | Range (visible window) buttons (`{label, hours}[]`) |
 | `show_range_buttons` | card | `true` | Toggle the range buttons |
+| `resolutions` | card | 1s…15m | Resolution buttons (`{label, seconds}[]`) |
+| `resolution` | card | first preset | Active downsample bucket in seconds (`0` = full) |
+| `show_resolution_buttons` | card | `true` | Toggle the resolution buttons |
 | `tooltip` | card | `true` | Crosshair tooltip |
 | `auto_pane_by_unit` | card | `false` | Put each distinct unit on its own pane |
 | `uniform_distribution` | card | `true` | Distribute time-axis ticks uniformly (`uniformDistribution`) |
@@ -201,10 +245,11 @@ src/
 ├── card.ts     LitElement custom card: config, history load, live updates, legend
 ├── chart.ts    Lightweight Charts v5 wrapper (composition over the public API)
 ├── history.ts  Recorder fetch + row → point mapping
-├── editor.ts   Visual GUI config editor
+├── editor.ts   Visual GUI config editor (grouped sections, hints)
 ├── theme.ts    Light/dark chart theming
+├── i18n.ts     Editor/card translations (de/en)
 ├── types.ts    Shared types
-└── const.ts    Tags, version, default palette
+└── const.ts    Tags, version, default palette + presets
 ```
 
 The library is **never patched** — it is bundled as a dependency and driven
