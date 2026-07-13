@@ -80,7 +80,20 @@ export class LightweightChartsCard extends LitElement {
   // ---- Rendering ----------------------------------------------------------
 
   protected override firstUpdated(): void {
-    if (!this.config) return;
+    this.initChart();
+  }
+
+  public override connectedCallback(): void {
+    super.connectedCallback();
+    // Home Assistant disconnects/reconnects cards during layout (Sections view,
+    // lazy rendering, drag). firstUpdated only fires once, so rebuild the chart
+    // here if it was torn down on a previous disconnect.
+    if (this.hasUpdated && !this.controller) this.initChart();
+  }
+
+  /** Create the chart on the (already rendered) .chart element and load data. */
+  private initChart(): void {
+    if (!this.config || this.controller || !this.chartEl) return;
     this.lastDark = isDark(this.hass);
     this.controller = new ChartController(this.chartEl, this.lastDark);
     this.controller.setSeries(this.config.series, this.resolvePanes());
@@ -172,9 +185,10 @@ export class LightweightChartsCard extends LitElement {
   // ---- Data ---------------------------------------------------------------
 
   private async loadHistory(): Promise<void> {
-    if (!this.hass || !this.config) return;
+    const controller = this.controller;
+    if (!this.hass || !this.config || !controller) return;
+    const cfg = this.config;
     try {
-      const cfg = this.config;
       const entityIds = cfg.series.map((s) => s.entity);
       const needAttributes = cfg.series.some((s) => !!s.ohlc_attributes);
 
@@ -186,26 +200,33 @@ export class LightweightChartsCard extends LitElement {
         needAttributes,
       );
 
+      // The card may have been disconnected/rebuilt while awaiting the fetch —
+      // in that case `this.controller` is a different (or no) instance. Bail out
+      // instead of writing into a destroyed chart.
+      if (this.controller !== controller || !this.isConnected) return;
+
       cfg.series.forEach((s, i) => {
         const rows = raw[s.entity];
         if (s.type === "candlestick") {
           const pts = toOhlcPoints(rows, s);
-          this.controller!.setData(i, pts);
+          controller.setData(i, pts);
           const last = pts[pts.length - 1];
           if (last) this.liveCursor[i] = last.time;
         } else {
           const pts = toLinePoints(rows, s);
-          this.controller!.setData(i, pts);
+          controller.setData(i, pts);
           const last = pts[pts.length - 1];
           if (last) this.liveCursor[i] = last.time;
         }
       });
 
-      this.controller!.fitContent();
+      controller.fitContent();
       this.historyLoaded = true;
       this.error = undefined;
     } catch (e) {
-      this.error = `History load failed: ${(e as Error).message}`;
+      if (this.controller === controller) {
+        this.error = `History load failed: ${(e as Error).message}`;
+      }
     }
   }
 
@@ -353,6 +374,7 @@ export class LightweightChartsCard extends LitElement {
     super.disconnectedCallback();
     this.controller?.destroy();
     this.controller = undefined;
+    this.historyLoaded = false;
   }
 
   static override styles = css`

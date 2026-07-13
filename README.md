@@ -1,5 +1,9 @@
 # Lightweight Charts Card
 
+[![GitHub release](https://img.shields.io/github/v/release/YamahaRacing/lightweight-charts-card?style=flat-square)](https://github.com/YamahaRacing/lightweight-charts-card/releases)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=flat-square)](https://github.com/hacs/integration)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+
 A slick, high-performance chart card for **Home Assistant**, built on
 [TradingView Lightweight Charts](https://github.com/tradingview/lightweight-charts) v5.
 Canvas-rendered (not SVG/DOM), so it stays smooth even with long histories and
@@ -7,6 +11,20 @@ live-streaming sensors.
 
 > This is a **custom Lovelace card** (frontend), not a Supervisor *add-on*.
 > Lightweight Charts is a browser library, so charting lives in the dashboard.
+
+<!-- Add screenshots to docs/ and reference them here, e.g.:
+![Overview](docs/overview.png)
+![Multi-pane](docs/multi-pane.png)
+-->
+
+## Install via HACS
+
+1. HACS → **⋮** → **Custom repositories**
+2. Repository: `https://github.com/YamahaRacing/lightweight-charts-card` · Category: **Dashboard**
+3. Open the card entry → **Download**
+4. Hard-refresh the browser (Ctrl/Cmd + F5). If your dashboard is in YAML mode,
+   add the resource `/hacsfiles/lightweight-charts-card/lightweight-charts-card.js`
+   as a **JavaScript Module**.
 
 ## Features
 
