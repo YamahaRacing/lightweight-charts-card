@@ -82,12 +82,14 @@ export class LightweightChartsCardEditor extends LitElement {
     value: string | undefined,
     on: (v: string | undefined) => void,
     list?: string,
+    placeholder?: string,
   ): TemplateResult {
     return html`<label class="field"
       ><span>${label}</span>
       <input
         .value=${value ?? ""}
         list=${list ?? nothing}
+        placeholder=${placeholder ?? nothing}
         @input=${(e: Event) => on((e.target as HTMLInputElement).value)}
       />
     </label>`;
@@ -248,6 +250,10 @@ export class LightweightChartsCardEditor extends LitElement {
   private seriesCard(s: SeriesConfig, i: number): TemplateResult {
     const color = s.color ?? paletteColor(i);
     const title = s.name || s.entity || "Neue Serie";
+    const type = s.type ?? "line";
+    const isBinary = type === "binary";
+    const hasLineWidth = ["line", "area", "baseline", "binary"].includes(type);
+    const hasFill = ["area", "baseline", "binary"].includes(type);
     return html`<details class="series" open>
       <summary>
         <span class="dot" style=${`background:${color}`}></span>
@@ -290,30 +296,42 @@ export class LightweightChartsCardEditor extends LitElement {
           min: 0,
           placeholder: "auto",
         })}
-        ${this.text("Einheit", s.unit, (v) => this.setSeries(i, { unit: v }))}
-        ${this.num(
-          "Linienbreite",
-          s.line_width,
-          (v) => this.setSeries(i, { line_width: v }),
-          { min: 1, step: 1, placeholder: "2" },
-        )}
-        ${this.num(
-          "Füllung (0–1)",
-          s.fill_opacity,
-          (v) => this.setSeries(i, { fill_opacity: v }),
-          { min: 0, step: 0.05, placeholder: "0.4" },
-        )}
-        ${this.num(
-          "Nachkommastellen",
-          s.precision,
-          (v) => this.setSeries(i, { precision: v }),
-          { min: 0, step: 1 },
-        )}
-        ${this.num("Faktor", s.factor, (v) => this.setSeries(i, { factor: v }), {
-          step: 0.001,
-          placeholder: "1",
-        })}
-        ${s.type === "baseline"
+        ${isBinary
+          ? nothing
+          : this.text("Einheit", s.unit, (v) => this.setSeries(i, { unit: v }))}
+        ${hasLineWidth
+          ? this.num(
+              "Linienbreite",
+              s.line_width,
+              (v) => this.setSeries(i, { line_width: v }),
+              { min: 1, step: 1, placeholder: "2" },
+            )
+          : nothing}
+        ${hasFill
+          ? this.num(
+              "Füllung (0–1)",
+              s.fill_opacity,
+              (v) => this.setSeries(i, { fill_opacity: v }),
+              { min: 0, step: 0.05, placeholder: "0.4" },
+            )
+          : nothing}
+        ${isBinary
+          ? nothing
+          : this.num(
+              "Nachkommastellen",
+              s.precision,
+              (v) => this.setSeries(i, { precision: v }),
+              { min: 0, step: 1 },
+            )}
+        ${isBinary
+          ? nothing
+          : this.num(
+              "Faktor (× Wert)",
+              s.factor,
+              (v) => this.setSeries(i, { factor: v }),
+              { step: 0.001, placeholder: "1" },
+            )}
+        ${type === "baseline"
           ? this.num(
               "Baseline-Wert",
               s.baseline_value,
@@ -321,9 +339,9 @@ export class LightweightChartsCardEditor extends LitElement {
               { step: 0.1, placeholder: "0" },
             )
           : nothing}
-        ${s.type === "binary"
+        ${isBinary
           ? this.text(
-              "An-Zustände (Komma)",
+              'Als „An" werten',
               (s.on_states ?? []).join(", "),
               (v) =>
                 this.setSeries(i, {
@@ -334,6 +352,8 @@ export class LightweightChartsCardEditor extends LitElement {
                         .filter(Boolean)
                     : undefined,
                 }),
+              undefined,
+              "on, open, heat",
             )
           : nothing}
       </div>
